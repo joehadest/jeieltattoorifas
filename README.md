@@ -136,6 +136,18 @@ O resultado aparece na campanha, em `/resultados` e na área do participante. Os
 
 ## Verificação e publicação
 
+O acompanhamento financeiro fica em `/admin/pagamentos`: filtros por campanha, status, busca e período da reserva no horário de Brasília, totais brutos, detalhes e exportação CSV. O CSV protege campos de participantes contra execução como fórmulas em planilhas. Cancelar ou confirmar mantém a confirmação explícita e as validações do banco: apenas administrador, reserva pendente dentro do prazo e campanha ainda sem sorteio.
+
+A migração `202610210006_payment_tracking.sql`, incluída no SQL combinado, adiciona `order_events` com leitura restrita ao administrador e eventos que não podem ser editados ou apagados pelas rotas da aplicação. As novas reservas congelam chave Pix, recebedor, cidade e WhatsApp em `payment_snapshot`. Assim, alterações posteriores nas configurações não trocam o destino de um pedido aberto. Pedidos anteriores mantêm os dados que já possuem, sem inventar datas ou eventos históricos. `paid_at` é a data da **confirmação pelo organizador**, não uma prova de crédito no banco.
+
+O checkout consulta o pedido autenticado a cada 8 segundos enquanto estiver pendente e a página estiver visível, ao retornar para a página e pelo botão “Verificar status”. Para ao encontrar um estado final. As consultas exigem a conta proprietária e respeitam RLS. Ao expirar ou cancelar, os botões Pix deixam de ser exibidos e o cliente é orientado a falar com o organizador caso tenha pago. Os números não são atribuídos novamente por um pagamento tardio.
+
+**Pix automático ainda não integrado.** Em 21/10/2026 foi escolhida a Efí como candidata para avaliação. Não há credenciais, conta conectada, cobrança dinâmica ou webhook Efí neste projeto. O fluxo atual continua com conferência manual. A aceitação desta campanha deve ser confirmada diretamente com a Efí; capacidade técnica da API não garante aprovação da atividade. O Asaas foi descartado nesta avaliação porque sua lista oficial inclui rifas e sorteios entre as atividades não atendidas.
+
+Para avançar com a Efí, o titular deve consultar o [atendimento oficial](https://sejaefi.com.br/central-de-ajuda/api) sobre o formato real da campanha, os documentos exigidos, a conta adequada e as tarifas. Após a aprovação, a [documentação de credenciais](https://dev.efipay.com.br/docs/api-pix/credenciais/) orienta a criação da aplicação, separação de homologação/produção e certificado. Credenciais e certificados devem permanecer no servidor, fora de variáveis `VITE_`, banco público, GitHub e chat. A próxima implementação deverá criar cobrança com `txid` estável por pedido, consultar a API para validar o recebimento, deduplicar notificações e tratar pagamentos duplicados ou após o prazo sem substituir o dono dos números. O recebimento de [webhooks Efí](https://dev.efipay.com.br/docs/api-pix/webhooks/) exige definir e testar a autenticação do servidor; o site estático atual não recebe essas notificações.
+
+Referências da avaliação: [cobranças imediatas Efí](https://dev.efipay.com.br/docs/api-pix/cobrancas-imediatas/), [termos Efí Empresas, seção 13](https://sejaefi.com.br/termos-e-contratos/termos-e-condicoes-de-uso-modalidade-empresas), [atividades não atendidas no Asaas](https://central.ajuda.asaas.com/hc/pt-br/articles/54012368446491-Quais-atividades-econ%C3%B4micas-n%C3%A3o-s%C3%A3o-aceitas-no-Asaas).
+
 ```powershell
 npm.cmd test
 npm.cmd run build

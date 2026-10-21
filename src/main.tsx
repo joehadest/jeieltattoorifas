@@ -6,5 +6,6 @@ import './styles.css';
 import './site-theme.css';
 import './editor.css';
 import './accounts.css';
+import './payments.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><AuthProvider><App /></AuthProvider></React.StrictMode>);

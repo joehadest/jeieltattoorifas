@@ -72,3 +72,50 @@ test('amostragem rejeita a sobra de 2^32 e valida os limites',()=>{
   const values=[4294967295,4294967294,7];const result=secureDrawIndex(3,()=>values.shift()!);assert.equal(result.sample,4294967294);assert.equal(result.index,2);
   assert.deepEqual(secureDrawIndex(1,()=>4294967295),{sample:4294967295,index:0});assert.throws(()=>secureDrawIndex(0));assert.throws(()=>secureDrawIndex(3,()=>-1));
 });
+
+test('dados Pix ficam congelados e confirmação registra data e responsável sem permitir reprocessamento',async()=>{
+  const order=await reserve(a,[20]);
+  await asUser(admin);
+  await db.query(`update public.site_settings set pix_key='nova-chave@example.com',receiver_name='Outro Recebedor' where id=1`);
+  await pay(order.id);
+  const result=await db.query<{payment_snapshot:{pix_key:string;receiver_name:string};paid_at:string;status:string}>(`select payment_snapshot,paid_at,status from public.orders where id=$1`,[order.id]);
+  assert.equal(result.rows[0].payment_snapshot.pix_key,'pagamento@example.com');
+  assert.equal(result.rows[0].payment_snapshot.receiver_name,'Organizador Teste');
+  assert.ok(result.rows[0].paid_at);assert.equal(result.rows[0].status,'paid');
+  await assert.rejects(db.query(`select public.admin_order_status($1,'paid')`,[order.id]),/processada/);
+  const events=await db.query<{event_type:string;source:string;actor_id:string|null;occurred_at:string}>(`select * from public.order_events where order_id=$1 order by occurred_at`,[order.id]);
+  assert.deepEqual(events.rows.map(event=>event.event_type),['created','paid']);
+  assert.equal(events.rows[0].actor_id,null);assert.equal(events.rows[1].actor_id,admin);assert.equal(events.rows[1].source,'manual');
+  assert.equal(new Date(events.rows[1].occurred_at).getTime(),new Date(result.rows[0].paid_at).getTime());
+  await asUser(a);assert.equal((await db.query('select * from public.order_events')).rows.length,0);
+  await assert.rejects(db.query(`insert into public.order_events(order_id,event_type,source) values($1,'paid','manual')`,[order.id]),/permission denied/);
+  await db.exec('reset role');
+  await assert.rejects(db.query(`update public.order_events set event_type='cancelled' where order_id=$1`,[order.id]),/não pode/);
+  await assert.rejects(db.query(`delete from public.order_events where order_id=$1`,[order.id]),/não pode/);
+});
+
+test('expiração libera números sem confirmar pagamento tardio e cancelamento fica no histórico',async()=>{
+  const old=await reserve(a,[30]);
+  await db.exec('reset role');await db.query(`update public.orders set expires_at=now()-interval '1 minute' where id=$1`,[old.id]);
+  const replacement=await reserve(b,[30]);
+  await asUser(admin);await assert.rejects(db.query(`select public.admin_order_status($1,'paid')`,[old.id]),/expirou/);
+  await db.query(`select public.admin_order_status($1,'cancelled')`,[replacement.id]);
+  const cancelled=await db.query<{cancelled_at:string;paid_at:null}>(`select cancelled_at,paid_at from public.orders where id=$1`,[replacement.id]);
+  assert.ok(cancelled.rows[0].cancelled_at);assert.equal(cancelled.rows[0].paid_at,null);
+  const events=await db.query<{event_type:string;source:string;actor_id:string|null}>(`select * from public.order_events where order_id=$1 order by occurred_at`,[old.id]);
+  assert.deepEqual(events.rows.map(event=>event.event_type),['created','expired']);
+  assert.equal(events.rows[1].source,'system');assert.equal(events.rows[1].actor_id,null);
+  await db.exec('reset role');
+  assert.equal((await db.query(`select * from public.tickets where order_id=$1`,[replacement.id])).rows.length,0);
+});
+
+test('reaplicar atualização preserva pagamentos, snapshots e eventos existentes',async()=>{
+  const order=await reserve(a,[40]);await pay(order.id);
+  const before=await db.query(`select payment_snapshot,paid_at,status from public.orders where id=$1`,[order.id]);
+  const eventsBefore=await db.query(`select * from public.order_events where order_id=$1 order by occurred_at`,[order.id]);
+  await db.exec('reset role');
+  const plan=await databasePlan(['admin_users','campaigns','orders','site_settings','tickets']);
+  for (const statement of plan.statements) await db.exec(statement);
+  assert.deepEqual((await db.query(`select payment_snapshot,paid_at,status from public.orders where id=$1`,[order.id])).rows,before.rows);
+  assert.deepEqual((await db.query(`select * from public.order_events where order_id=$1 order by occurred_at`,[order.id])).rows,eventsBefore.rows);
+});

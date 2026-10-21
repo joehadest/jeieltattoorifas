@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { defaultSettings, demoCampaigns, validateReservation, type Campaign, type Order, type Settings, type Ticket } from './domain';
 import { normalizeAppearance, validateAppearance, type SiteAppearance } from './appearance';
-import type { AccountOrder, CustomerProfile, DrawResult } from './domain';
+import type { AccountOrder, CustomerProfile, DrawResult, OrderEvent } from './domain';
 import { secureDrawIndex } from './draw';
 
 const url = import.meta.env.VITE_SUPABASE_URL;
@@ -15,7 +15,7 @@ export function resetDemo() {
   localStorage.removeItem(STORAGE);
   localStorage.removeItem('rifaclub-receipts');
 }
-interface DemoData { campaigns: Campaign[]; settings: Settings; orders: Order[]; profiles?: CustomerProfile[]; draws?: DrawResult[] }
+interface DemoData { campaigns: Campaign[]; settings: Settings; orders: Order[]; profiles?: CustomerProfile[]; draws?: DrawResult[]; order_events?: OrderEvent[] }
 export const DEMO_CUSTOMER_SESSION = 'jeiel-demo-customer';
 function read(): DemoData {
   try { const saved = localStorage.getItem(STORAGE); if (saved) return JSON.parse(saved); } catch { /* Use defaults when storage is unavailable. */ }
@@ -46,7 +46,11 @@ export async function reserve(campaign: Campaign, numbers: number[], name: strin
     if (!current) throw new Error('Campanha não encontrada.');
     validateReservation(current, numbers, name, phone, occupied);
     const order: Order = { id: crypto.randomUUID(), access_token: crypto.randomUUID(), customer_id:customer.id, campaign_id: current.id, customer_name: name.trim(), phone: phone.replace(/\D/g, ''), numbers: [...numbers].sort((a,b) => a-b), amount: Math.round(current.price * numbers.length * 100) / 100, status: 'pending', created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 30 * 60_000).toISOString() };
-    data.orders.push(order); write(data); return order;
+    const {pix_key,receiver_name,receiver_city,whatsapp}=data.settings;
+    order.payment_snapshot={pix_key,receiver_name,receiver_city,whatsapp};
+    data.orders.push(order);
+    data.order_events=[...(data.order_events||[]),{id:crypto.randomUUID(),order_id:order.id,event_type:'created',source:'system',occurred_at:order.created_at,actor_id:null}];
+    write(data); return order;
   };
   return navigator.locks ? navigator.locks.request('rifaclub-reserve', execute) : execute();
 }
@@ -59,13 +63,34 @@ export async function adminOrders(): Promise<Order[]> {
   const { data, error } = await supabase.from('orders').select('*').order('created_at', { ascending: false }); check(error);
   return (data as Order[]).map(o => ({ ...o, status: o.status === 'pending' && Date.parse(o.expires_at) <= Date.now() ? 'expired' : o.status }));
 }
+export async function getOwnOrder(id:string):Promise<Order> {
+  const customer=await requireCustomer();
+  if (!supabase) {
+    const order=read().orders.find(item=>item.id===id && item.customer_id===customer.id);
+    if (!order) throw new Error('Reserva indisponível. Entre na conta que fez a reserva.');
+    return expireOrder(order);
+  }
+  const {data,error}=await supabase.from('orders').select('*').eq('id',id).eq('customer_id',customer.id).maybeSingle();
+  check(error);
+  if (!data) throw new Error('Reserva indisponível. Entre na conta que fez a reserva.');
+  return expireOrder(data as Order);
+}
+export async function getOrderEvents(id:string):Promise<OrderEvent[]> {
+  if (!supabase) return (read().order_events||[]).filter(event=>event.order_id===id).sort((a,b)=>a.occurred_at.localeCompare(b.occurred_at));
+  const {data,error}=await supabase.from('order_events').select('*').eq('order_id',id).order('occurred_at');
+  check(error); return data || [];
+}
 export async function setOrderStatus(id: string, status: 'paid' | 'cancelled') {
   if (supabase) { const { error } = await supabase.rpc('admin_order_status', { p_order_id: id, p_status: status }); check(error); return; }
   await navigator.locks.request('rifaclub-reserve', async () => {
     const data = read(); const order = data.orders.find(o => o.id === id);
     if (order && data.draws?.some(draw => draw.campaign_id===order.campaign_id)) throw new Error('Esta campanha já foi sorteada.');
     if (!order || order.status !== 'pending' || Date.parse(order.expires_at) <= Date.now()) throw new Error('Esta reserva expirou ou já foi processada.');
-    order.status = status; write(data);
+    order.status = status;
+    const timestamp=new Date().toISOString();
+    if (status==='paid') order.paid_at=timestamp; else order.cancelled_at=timestamp;
+    data.order_events=[...(data.order_events||[]),{id:crypto.randomUUID(),order_id:order.id,event_type:status,source:'manual',occurred_at:timestamp,actor_id:null}];
+    write(data);
   });
 }
 export async function saveSettings(settings: Settings) {

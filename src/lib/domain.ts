@@ -12,11 +12,18 @@ export interface Settings {
   appearance?: SiteAppearance;
 }
 export interface Order {
+  payment_snapshot?: Pick<Settings, 'pix_key' | 'receiver_name' | 'receiver_city' | 'whatsapp'> | null;
+  paid_at?: string | null;
+  cancelled_at?: string | null;
   customer_id?: string | null;
   id: string; access_token: string; campaign_id: string; customer_name: string;
   phone: string; numbers: number[]; amount: number;
   status: 'pending' | 'paid' | 'cancelled' | 'expired';
   created_at: string; expires_at: string;
+}
+export interface OrderEvent {
+  id: string; order_id: string; event_type: 'created' | 'paid' | 'cancelled' | 'expired';
+  source: 'system' | 'manual'; occurred_at: string; actor_id: string | null;
 }
 export interface CustomerProfile { user_id: string; full_name: string; phone: string }
 export interface AccountOrder extends Order { campaign: Campaign }
