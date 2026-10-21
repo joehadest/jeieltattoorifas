@@ -1,0 +1,32 @@
+{
+  "name": "rifa-club",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node node_modules/vite/bin/vite.js --host 127.0.0.1",
+    "dev:demo": "node node_modules/vite/bin/vite.js --host 127.0.0.1 --mode demo --port 5174",
+    "build": "node node_modules/typescript/bin/tsc -b && node node_modules/vite/bin/vite.js build",
+    "preview": "node node_modules/vite/bin/vite.js preview --host 127.0.0.1",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "db:setup": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/setup-database.mjs",
+    "db:prepare": "node --experimental-strip-types scripts/prepare-tattoo-update.mjs",
+    "db:check": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/sync-database.mjs --check",
+    "db:sync": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/sync-database.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.4",
+    "lucide-react": "^0.577.0",
+    "qrcode": "^1.5.4",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "postgres": "^3.4.7"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.4.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "typescript": "~5.8.3",
+    "vite": "^8.1.4"
+  }
+}

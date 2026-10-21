@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.local
+.sites-workflow/
+.npm-cache/
+artifacts/
+tsconfig.tsbuildinfo
