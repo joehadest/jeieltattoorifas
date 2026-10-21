@@ -39,6 +39,14 @@ export function whatsappNumber(phone: string) {
   const digits = phoneDigits(phone);
   return /^(?:\d{10}|\d{11})$/.test(digits) ? `55${digits}` : /^55\d{10,11}$/.test(digits) ? digits : '';
 }
+export function validateCampaignActivation(campaign: Campaign) {
+  if (campaign.status !== 'active') return;
+  const date = campaign.draw_date;
+  const validDate = !!date && /^\d{4}-\d{2}-\d{2}$/.test(date)
+    && Number.isFinite(Date.parse(`${date}T12:00:00Z`))
+    && new Date(`${date}T12:00:00Z`).toISOString().slice(0,10) === date;
+  if (!validDate || !campaign.rules.trim()) throw new Error('Defina o regulamento e uma data válida para o sorteio antes de ativar a campanha.');
+}
 export function validateReservation(campaign: Campaign, numbers: number[], name: string, phone: string, occupied: Ticket[]) {
   if (campaign.status !== 'active') throw new Error('Esta campanha não está recebendo reservas.');
   if (name.trim().length < 3 || name.trim().length > 100) throw new Error('Informe seu nome, com pelo menos 3 caracteres.');

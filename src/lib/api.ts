@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { defaultSettings, demoCampaigns, validateReservation, type Campaign, type Order, type Settings, type Ticket } from './domain';
+import { defaultSettings, demoCampaigns, validateCampaignActivation, validateReservation, whatsappNumber, type Campaign, type Order, type Settings, type Ticket } from './domain';
 import { normalizeAppearance, validateAppearance, type SiteAppearance } from './appearance';
 import type { AccountOrder, CustomerProfile, DrawResult, OrderEvent } from './domain';
 import { secureDrawIndex } from './draw';
@@ -45,7 +45,7 @@ export async function reserve(campaign: Campaign, numbers: number[], name: strin
     const current = data.campaigns.find(c => c.id === campaign.id);
     if (!current) throw new Error('Campanha não encontrada.');
     validateReservation(current, numbers, name, phone, occupied);
-    const order: Order = { id: crypto.randomUUID(), access_token: crypto.randomUUID(), customer_id:customer.id, campaign_id: current.id, customer_name: name.trim(), phone: phone.replace(/\D/g, ''), numbers: [...numbers].sort((a,b) => a-b), amount: Math.round(current.price * numbers.length * 100) / 100, status: 'pending', created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 30 * 60_000).toISOString() };
+    const order: Order = { id: crypto.randomUUID(), access_token: crypto.randomUUID(), customer_id:customer.id, campaign_id: current.id, customer_name: name.trim(), phone: whatsappNumber(phone), numbers: [...numbers].sort((a,b) => a-b), amount: Math.round(current.price * numbers.length * 100) / 100, status: 'pending', created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 30 * 60_000).toISOString() };
     const {pix_key,receiver_name,receiver_city,whatsapp}=data.settings;
     order.payment_snapshot={pix_key,receiver_name,receiver_city,whatsapp};
     data.orders.push(order);
@@ -129,6 +129,7 @@ export async function uploadSiteImage(file: File): Promise<string> {
   return supabase.storage.from('site-assets').getPublicUrl(path).data.publicUrl;
 }
 export async function saveCampaign(campaign: Campaign) {
+  validateCampaignActivation(campaign);
   if (!supabase) {
     await navigator.locks.request('rifaclub-reserve', async () => {
       const data = read(); const existing = data.campaigns.find(c => c.id === campaign.id);
@@ -157,10 +158,13 @@ async function requireCustomer() {
   if (error || !data.user) throw new Error('Entre na sua conta para continuar.');
   return data.user;
 }
-export async function getCustomerProfile():Promise<CustomerProfile> {
+export async function getCustomerProfile(signal?:AbortSignal):Promise<CustomerProfile> {
   const user = await requireCustomer();
+  signal?.throwIfAborted();
   if (!supabase) return read().profiles?.find(profile => profile.user_id===user.id) || { user_id:user.id,full_name:'Participante de demonstração',phone:'' };
-  const { data,error } = await supabase.from('customer_profiles').select('*').eq('user_id',user.id).maybeSingle(); check(error);
+  let query=supabase.from('customer_profiles').select('*').eq('user_id',user.id);
+  if(signal) query=query.abortSignal(signal);
+  const { data,error } = await query.maybeSingle(); check(error);
   return data || { user_id:user.id,full_name:String(user.user_metadata.full_name||'').slice(0,100),phone:String(user.user_metadata.phone||'').slice(0,25) };
 }
 export async function saveCustomerProfile(fullName:string,phone:string) {
@@ -172,12 +176,15 @@ export async function saveCustomerProfile(fullName:string,phone:string) {
   if (!supabase) { const data=read(); data.profiles=[...(data.profiles||[]).filter(item => item.user_id!==user.id),profile]; write(data); return; }
   const { error } = await supabase.from('customer_profiles').upsert(profile); check(error);
 }
-export async function getAccountOrders():Promise<AccountOrder[]> {
+export async function getAccountOrders(signal?:AbortSignal):Promise<AccountOrder[]> {
   const user=await requireCustomer();
+  signal?.throwIfAborted();
   if (!supabase) {
     const data=read(); return data.orders.filter(order => order.customer_id===user.id).map(order => ({ ...expireOrder(order),campaign:data.campaigns.find(c => c.id===order.campaign_id)! })).filter(order => !!order.campaign).reverse();
   }
-  const { data,error } = await supabase.rpc('get_account_orders'); check(error); return data || [];
+  let query=supabase.rpc('get_account_orders');
+  if(signal) query=query.abortSignal(signal);
+  const { data,error } = await query; check(error); return data || [];
 }
 function legacyReceipts():Receipt[] {
   try { const data=JSON.parse(localStorage.getItem('rifaclub-receipts')||'[]'); return Array.isArray(data) ? data.filter(item => typeof item?.id==='string' && typeof item?.access_token==='string') : []; } catch { return []; }

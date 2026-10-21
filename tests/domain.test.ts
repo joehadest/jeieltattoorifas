@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { demoCampaigns, defaultSettings, validateReservation, whatsappNumber, numberLabel } from '../src/lib/domain.ts';
+import { demoCampaigns, defaultSettings, validateCampaignActivation, validateReservation, whatsappNumber, numberLabel } from '../src/lib/domain.ts';
 import { crc16, pixPayload } from '../src/lib/pix.ts';
 
 test('normaliza telefones brasileiros com DDD e rejeita telefones incompletos', () => {
@@ -28,6 +28,15 @@ test('a rifa Tattoo possui 100 números de 01 a 100 a R$ 30 cada', () => {
   assert.equal(campaign.number_start,1); assert.equal(campaign.total_numbers,100); assert.equal(campaign.price,30);
   assert.equal(numberLabel(1,100),'01'); assert.equal(numberLabel(100,100),'100');
   assert.doesNotThrow(() => validateReservation(campaign,[1,100],'Pessoa Teste','11999991234',[]));
+});
+test('ativação de campanha exige regulamento e data real, inclusive no atalho do painel', () => {
+  const campaign={...demoCampaigns[0],draw_date:'2026-12-29'};
+  assert.doesNotThrow(()=>validateCampaignActivation(campaign));
+  assert.throws(()=>validateCampaignActivation({...campaign,draw_date:null}),/antes de ativar/);
+  assert.throws(()=>validateCampaignActivation({...campaign,rules:'   '}),/regulamento/);
+  assert.throws(()=>validateCampaignActivation({...campaign,draw_date:'2026-02-30'}),/data válida/);
+  assert.throws(()=>validateCampaignActivation({...campaign,draw_date:'data inválida'}),/data válida/);
+  assert.doesNotThrow(()=>validateCampaignActivation({...campaign,draw_date:null,rules:'',status:'paused'}));
 });
 test('Pix só é emitido com dados completos e inclui valor e CRC16 válidos', () => {
   assert.equal(pixPayload(defaultSettings,9.9),'');

@@ -34,4 +34,6 @@
 .custom-logo{height:44px!important;max-width:100%;object-fit:contain;object-position:left center;display:block}
 .public-site .brand:has(.custom-logo){max-width:280px;flex-shrink:1}.public-site .header-inner>a{min-width:0}.public-site .header-actions{flex-shrink:0}
 .public-site .site-section:has(+.site-section[data-section="how"]){margin-bottom:0}
+.brand{max-width:100%;min-width:0}.brand-mark{flex-shrink:0}.brand-name{min-width:0}.brand-name>span,.brand-name>b{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.public-site .header-inner>a{max-width:280px}.public-site .footer-top>div{min-width:0}.public-site .footer-top a{display:inline-block;max-width:100%}.admin-sidebar>a{min-width:0;max-width:100%}
 @media(max-width:640px){.public-site .steps{grid-template-columns:1fr!important}.custom-logo{max-width:140px!important;height:36px!important}.public-site .hero .hero-title-lines{font-size:inherit}.public-site .trust-inner{justify-content:initial}.public-site .trust-inner>span{padding:0}.public-site .hero h1{font-size:clamp(29px,10vw,43px)}.public-site .brand-name>span{max-width:140px;overflow-wrap:anywhere}.public-site .hero-caption{line-height:1.6}.public-site .footer-links{grid-template-columns:1fr 1fr}}

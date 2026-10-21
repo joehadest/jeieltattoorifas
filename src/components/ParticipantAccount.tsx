@@ -1,4 +1,4 @@
-import { useCallback,useEffect,useState } from 'react';
+import { useCallback,useEffect,useRef,useState } from 'react';
 import { ArrowRight,Check,LogOut,RefreshCw,Save,Ticket,UserRound,Wallet } from 'lucide-react';
 import { claimLegacyOrders,getAccountOrders,getCustomerProfile,isDemo,legacyReceiptCount,saveCustomerProfile,supabase } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -14,12 +14,25 @@ export default function ParticipantAccount({ path,campaigns,onPayment }:{ path:s
   const [profile,setProfile]=useState<CustomerProfile>({user_id:'',full_name:'',phone:''});
   const [error,setError]=useState('');const [message,setMessage]=useState('');const [busy,setBusy]=useState(false);
   const [filter,setFilter]=useState('all');const [password,setPassword]=useState('');const [confirmPassword,setConfirmPassword]=useState('');
-  const refresh=useCallback(async()=>{try{setOrders(await getAccountOrders());setError('');}catch{setError('Não foi possível carregar seus números. Atualize a página e tente novamente.');}finally{setLoading(false);}},[]);
+  const accountRequest=useRef<AbortController|null>(null);
+  const refresh=useCallback(async()=>{
+    const signal=accountRequest.current?.signal;if(!signal || signal.aborted)return;
+    try{const data=await getAccountOrders(signal);if(!signal.aborted){setOrders(data);setError('');}}
+    catch{if(!signal.aborted)setError('Não foi possível carregar seus números. Atualize a página e tente novamente.');}
+    finally{if(!signal.aborted)setLoading(false);}
+  },[]);
   useEffect(()=>{
-    if(!user) return;let active=true;
-    void getCustomerProfile().then(data=>{if(active)setProfile(data);}).catch(()=>{if(active)setError('Não foi possível carregar seu perfil.');});
-    void refresh();const timer=setInterval(refresh,15000);return()=>{active=false;clearInterval(timer);};
-  },[user,refresh]);
+    setOrders([]);setProfile({user_id:'',full_name:'',phone:''});setLoading(true);setError('');setMessage('');
+    if(!user?.id)return;
+    const controller=new AbortController();accountRequest.current=controller;
+    void getCustomerProfile(controller.signal).then(data=>{if(!controller.signal.aborted)setProfile(data);}).catch(()=>{if(!controller.signal.aborted)setError('Não foi possível carregar seu perfil.');});
+    void refresh();const timer=setInterval(refresh,15000);return()=>{controller.abort();clearInterval(timer);if(accountRequest.current===controller)accountRequest.current=null;};
+  },[user?.id,refresh]);
+  async function leaveAccount(){
+    accountRequest.current?.abort();
+    try{await signOut();}
+    catch(error){accountRequest.current=new AbortController();void refresh();throw error;}
+  }
   async function run(action:()=>Promise<void>,success:string) {setBusy(true);setError('');setMessage('');try{await action();setMessage(success);}catch(e){setError(e instanceof Error?e.message:'Não foi possível concluir.');}finally{setBusy(false);}}
   if(authLoading) return <div className="loading-state"><span className="spinner"/>Verificando sua conta...</div>;
   if(!user) return <section className="container participant-auth-page"><AccountAccess/></section>;
@@ -27,7 +40,7 @@ export default function ParticipantAccount({ path,campaigns,onPayment }:{ path:s
   const paid=orders.filter(order=>order.status==='paid');const pending=orders.filter(order=>order.status==='pending');
   const shown=orders.filter(order=>filter==='all'||order.status===filter);const legacy=legacyReceiptCount(orders.map(order=>order.id));
   return <section className="container participant-page">
-    <div className="account-page-heading"><div><span className="eyebrow">ÁREA DO PARTICIPANTE</span><h1>Meus números<span className="title-dot">.</span></h1><p>Suas participações e o andamento de cada reserva.</p></div><div><button className="button secondary" onClick={()=>void refresh()}><RefreshCw size={15}/>Atualizar</button><button className="text-button" disabled={busy} onClick={()=>void run(signOut,'Você saiu da sua conta.')}><LogOut size={15}/>Sair</button></div></div>
+    <div className="account-page-heading"><div><span className="eyebrow">ÁREA DO PARTICIPANTE</span><h1>Meus números<span className="title-dot">.</span></h1><p>Suas participações e o andamento de cada reserva.</p></div><div><button className="button secondary" onClick={()=>void refresh()}><RefreshCw size={15}/>Atualizar</button><button className="text-button" disabled={busy} onClick={()=>void run(leaveAccount,'Você saiu da sua conta.')}><LogOut size={15}/>Sair</button></div></div>
     {isDemo&&<p className="notice">Conta de demonstração. As participações ficam somente neste navegador.</p>}
     {error&&<p className="error" role="alert">{error}</p>}{message&&<p className="success-message" role="status"><Check size={16}/>{message}</p>}
     <div className="account-stat-grid"><div><Ticket/><span>Números confirmados</span><strong>{paid.reduce((sum,order)=>sum+order.numbers.length,0)}</strong></div><div><Wallet/><span>Reservas aguardando Pix</span><strong>{pending.length}</strong></div><div><UserRound/><span>Minha conta</span><strong className="account-email">{user.email}</strong></div></div>
