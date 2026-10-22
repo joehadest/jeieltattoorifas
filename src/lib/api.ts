@@ -14,6 +14,7 @@ export function resetDemo() {
   if (supabase) throw new Error('Disponível somente em demonstração.');
   localStorage.removeItem(STORAGE);
   localStorage.removeItem('rifaclub-receipts');
+  localStorage.removeItem('jeiel-demo-admin-access-v1');
 }
 interface DemoData { campaigns: Campaign[]; settings: Settings; orders: Order[]; profiles?: CustomerProfile[]; draws?: DrawResult[]; order_events?: OrderEvent[] }
 export const DEMO_CUSTOMER_SESSION = 'jeiel-demo-customer';

@@ -32,6 +32,7 @@ Abra o endereço exibido pelo Vite. No Windows, use `npm.cmd` se a política do 
 - `/admin/pedidos`: conferir e confirmar pagamentos ou cancelar reservas.
 - `/admin/sorteios`: conferir os números elegíveis, realizar e consultar o sorteio.
 - `/admin/aparencia`: logo, cores, fontes, imagens, textos e organização do site, com prévia ao vivo.
+- `/admin/administradores`: autorizar outros administradores por e-mail e remover acessos.
 - `/admin/configuracoes`: nome do site, Pix, recebedor, cidade e WhatsApp.
 
 Sem as variáveis do Supabase, o projeto abre em **demonstração local**. As campanhas são exemplos e as reservas ficam no `localStorage`. O painel de demonstração é acessível sem login e não deve receber dados pessoais ou pagamentos reais. Os dados locais não são enviados ao Supabase ao conectá-lo.
@@ -77,6 +78,14 @@ VITE_SUPABASE_ANON_KEY=SUA-CHAVE-PUBLICA
 4. Reinicie o Vite. Entre em `/admin` com o e-mail e a senha do usuário criado. Configure Pix e WhatsApp, crie uma campanha com data e regulamento e ative-a.
 
 As variáveis `VITE_` são públicas e entram no JavaScript do navegador. **Nunca use nelas a senha do PostgreSQL, `DATABASE_URL`, a chave `service_role` ou uma chave secreta.**
+
+### Administradores adicionais
+
+O painel é acessado diretamente por `/admin`; a página pública e a área do participante não exibem atalhos administrativos. A autorização é conferida no banco em cada operação protegida.
+
+Um administrador existente abre **Administradores**, informa o e-mail e confirma a autorização. Uma conta com esse e-mail já confirmado ganha acesso imediatamente. Para uma conta nova, a autorização fica pendente por 7 dias: compartilhe o link `/admin`, e a pessoa usa **Primeiro acesso com e-mail autorizado**, define a própria senha e confirma o e-mail. Ao voltar ao painel, o banco concede o acesso somente ao titular do e-mail confirmado. O cadastro não envia um convite automaticamente; o e-mail de confirmação é enviado pelo Supabase quando a pessoa cria sua conta.
+
+**Remover acesso** revoga a permissão sem excluir a conta ou suas participações. O organizador não pode remover o próprio acesso. Uma autorização cancelada ou expirada não pode ser utilizada. A migração `202610220007_admin_access.sql` habilita essa gestão sem expor chaves secretas no navegador.
 
 ### Preparar o banco usando `postgres`
 

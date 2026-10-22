@@ -9,6 +9,7 @@ const draft = await readFile(new URL('../supabase/jeiel-tattoo-draft.sql', impor
 const accounts = await readFile(new URL('../supabase/migrations/202610200004_customer_accounts.sql', import.meta.url),'utf8');
 const draws = await readFile(new URL('../supabase/migrations/202610200005_draws.sql', import.meta.url),'utf8');
 const payments = await readFile(new URL('../supabase/migrations/202610210006_payment_tracking.sql', import.meta.url),'utf8');
+const admins = await readFile(new URL('../supabase/migrations/202610220007_admin_access.sql', import.meta.url),'utf8');
 const body = source => source.replace(/^begin;\s*$/gm,'').replace(/^commit;\s*$/gm,'');
 const appearanceSeed = `-- Persiste a identidade da arte somente se o visual ainda não foi configurado.\nupdate public.site_settings set appearance = '${JSON.stringify(defaultAppearance).replaceAll("'", "''")}'::jsonb where id=1 and appearance='{}'::jsonb;`;
-await writeFile(new URL('../supabase/atualizar-jeiel-tattoo.sql', import.meta.url), `-- Atualiza personalização, imagens, numeração, contas, sorteios e histórico de pagamentos.\n-- Preserva configurações já preenchidas. Não ativa vendas nem executa sorteios.\nbegin;\n${body(migration)}\n${body(appearance)}\n${body(draft)}\n${appearanceSeed}\n${body(accounts)}\n${body(draws)}\n${body(payments)}\ncommit;\n`);
+await writeFile(new URL('../supabase/atualizar-jeiel-tattoo.sql', import.meta.url), `-- Atualiza personalização, imagens, numeração, contas, sorteios e histórico de pagamentos.\n-- Preserva configurações já preenchidas. Não ativa vendas nem executa sorteios.\nbegin;\n${body(migration)}\n${body(appearance)}\n${body(draft)}\n${appearanceSeed}\n${body(accounts)}\n${body(draws)}\n${body(payments)}\n${body(admins)}\ncommit;\n`);
