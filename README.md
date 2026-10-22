@@ -33,6 +33,7 @@ Abra o endereço exibido pelo Vite. No Windows, use `npm.cmd` se a política do 
 - `/admin/sorteios`: conferir os números elegíveis, realizar e consultar o sorteio.
 - `/admin/aparencia`: logo, cores, fontes, imagens, textos e organização do site, com prévia ao vivo.
 - `/admin/administradores`: autorizar outros administradores por e-mail e remover acessos.
+- `/admin/perfil`: escolher, trocar ou remover a foto individual do administrador.
 - `/admin/configuracoes`: nome do site, Pix, recebedor, cidade e WhatsApp.
 
 Sem as variáveis do Supabase, o projeto abre em **demonstração local**. As campanhas são exemplos e as reservas ficam no `localStorage`. O painel de demonstração é acessível sem login e não deve receber dados pessoais ou pagamentos reais. Os dados locais não são enviados ao Supabase ao conectá-lo.
@@ -92,6 +93,12 @@ Um administrador existente abre **Administradores**, informa o e-mail e confirma
 Em **Reservas** ou **Pagamentos**, use o botão de lixeira da reserva. A confirmação mostra participante, números e valor e exige digitar os oito caracteres do código da reserva. A exclusão é permanente: remove a reserva, seus eventos de pagamento e os números ocupados, atualiza os totais e retira a participação da conta do cliente. O login, o perfil e as outras reservas do participante são preservados.
 
 Reservas confirmadas também podem ser excluídas; essa ação não devolve o Pix recebido. Se a campanha já tiver um sorteio registrado, o banco bloqueia a exclusão de qualquer reserva para preservar o resultado. Somente administradores podem executar a operação, habilitada por `202610220008_delete_orders.sql`. O contexto interno usado na remoção dos eventos é privado e dura apenas a transação; o histórico continua protegido contra alterações e exclusões diretas.
+
+### Foto do administrador
+
+Clique no avatar do cabeçalho ou da barra lateral, ou abra **Meu perfil** (`/admin/perfil`). Escolha uma foto PNG, JPG, WebP ou AVIF de até 2 MB e clique em **Salvar foto**. A imagem aparece em formato circular no painel. **Remover foto** e salvar volta ao ícone padrão. Na demonstração, o limite é 1 MB e a imagem fica somente neste navegador.
+
+Cada administrador altera somente a própria foto. A migração `202610220009_admin_profiles.sql` cria o perfil protegido por RLS e o bucket privado `admin-avatars`; os arquivos são carregados por uma requisição autenticada e exibidos com uma URL temporária em memória. A foto não entra nos dados públicos do site. Ao substituir ou remover a foto, a referência do perfil muda; arquivos anteriores ficam preservados no armazenamento privado.
 
 ### Preparar o banco usando `postgres`
 

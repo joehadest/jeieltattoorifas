@@ -10,10 +10,13 @@ before(async()=>{
     create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz);
     create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
     grant usage on schema public,auth to anon,authenticated;`);
-  for(const file of ['202610200001_initial.sql','202610220007_admin_access.sql'])await db.exec(await readFile(new URL(`../supabase/migrations/${file}`,import.meta.url),'utf8'));
+  await db.exec(`create schema storage;create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
+    create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text);alter table storage.objects enable row level security;
+    grant usage on schema storage to anon,authenticated;grant select,insert,update,delete on storage.objects to anon,authenticated;`);
+  for(const file of ['202610200001_initial.sql','202610220007_admin_access.sql','202610220009_admin_profiles.sql'])await db.exec(await readFile(new URL(`../supabase/migrations/${file}`,import.meta.url),'utf8'));
 });
 beforeEach(async()=>{
-  await db.exec(`reset role;select set_config('request.jwt.claim.sub','',false);truncate public.admin_access_invites,public.admin_users,auth.users cascade;`);
+  await db.exec(`reset role;select set_config('request.jwt.claim.sub','',false);truncate public.admin_access_invites,public.admin_users,auth.users,storage.objects cascade;`);
   await db.query(`insert into auth.users values($1,'owner@example.com',now()),($2,'customer@example.com',now()),($3,'new@example.com',null)`,[owner,customer,newUser]);
   await db.query('insert into public.admin_users(user_id) values($1)',[owner]);
 });
@@ -78,4 +81,45 @@ test('gestão recusa e-mails inválidos e reaplicação preserva os acessos',asy
   await db.exec(await readFile(new URL('../supabase/migrations/202610220007_admin_access.sql',import.meta.url),'utf8'));
   assert.equal((await db.query('select * from public.admin_users')).rows.length,1);
   assert.equal((await db.query('select * from public.admin_access_invites')).rows.length,1);
+});
+
+test('cada administrador lê e altera somente a própria foto de perfil',async()=>{
+  const ownPath=`${owner}/00000000-0000-4000-a000-000000000111.png`;
+  const otherPath=`${customer}/00000000-0000-4000-a000-000000000112.jpg`;
+  await asUser(owner);await db.query(`select public.admin_add_access('customer@example.com')`);
+  await db.query('insert into public.admin_profiles(user_id,avatar_path) values($1,$2)',[owner,ownPath]);
+  await asUser(customer);assert.equal((await db.query('select * from public.admin_profiles')).rows.length,0);
+  await db.query('insert into public.admin_profiles(user_id,avatar_path) values($1,$2)',[customer,otherPath]);
+  assert.equal((await db.query('update public.admin_profiles set avatar_path=$1 where user_id=$2 returning user_id',[ownPath,owner])).rows.length,0);
+  await assert.rejects(db.query('update public.admin_profiles set avatar_path=$1 where user_id=$2',[ownPath,customer]),/admin_avatar_own_path/);
+  await db.query(`update public.admin_profiles set avatar_path='' where user_id=$1`,[customer]);
+  await asUser(owner);const own=await db.query<{avatar_path:string}>('select * from public.admin_profiles');assert.equal(own.rows.length,1);assert.equal(own.rows[0].avatar_path,ownPath);
+});
+
+test('fotos ficam em bucket privado e clientes, visitantes e outros administradores não acessam o arquivo',async()=>{
+  await db.exec('reset role');const bucket=await db.query<{public:boolean;file_size_limit:number;allowed_mime_types:string[]}>(`select * from storage.buckets where id='admin-avatars'`);
+  assert.equal(bucket.rows[0].public,false);assert.equal(Number(bucket.rows[0].file_size_limit),2000000);assert.ok(!bucket.rows[0].allowed_mime_types.includes('image/svg+xml'));
+  const name=`${owner}/00000000-0000-4000-a000-000000000111.png`;
+  await asUser(owner);await db.query("insert into storage.objects(bucket_id,name) values('admin-avatars',$1)",[name]);
+  assert.equal((await db.query("select * from storage.objects where bucket_id='admin-avatars'")).rows.length,1);
+  for(const [id,role] of [[null,'anon'],[customer,'authenticated']] as const){
+    await asUser(id,role);assert.equal((await db.query("select * from storage.objects where bucket_id='admin-avatars'")).rows.length,0);
+    await assert.rejects(db.query("insert into storage.objects(bucket_id,name) values('admin-avatars',$1)",[`${customer}/test.png`]),/row-level security/);
+    await assert.rejects(db.query('insert into public.admin_profiles(user_id) values($1)',[customer]),/permission denied|row-level security/);
+  }
+  await asUser(owner);await db.query(`select public.admin_add_access('customer@example.com')`);
+  await asUser(customer);assert.equal((await db.query("select * from storage.objects where bucket_id='admin-avatars'")).rows.length,0);
+  await assert.rejects(db.query("insert into storage.objects(bucket_id,name) values('admin-avatars',$1)",[name]),/row-level security/);
+  await db.query("insert into storage.objects(bucket_id,name) values('admin-avatars',$1)",[`${customer}/test.png`]);
+});
+
+test('revogar um administrador bloqueia seu perfil e seus arquivos mesmo com a sessão antiga',async()=>{
+  const name=`${customer}/00000000-0000-4000-a000-000000000112.jpg`;
+  await asUser(owner);await db.query(`select public.admin_add_access('customer@example.com')`);
+  await asUser(customer);await db.query('insert into public.admin_profiles(user_id,avatar_path) values($1,$2)',[customer,name]);
+  await db.query("insert into storage.objects(bucket_id,name) values('admin-avatars',$1)",[name]);
+  await asUser(owner);await db.query(`select public.admin_revoke_access('customer@example.com')`);
+  await asUser(customer);assert.equal((await db.query('select * from public.admin_profiles')).rows.length,0);
+  assert.equal((await db.query("select * from storage.objects where bucket_id='admin-avatars'")).rows.length,0);
+  assert.equal((await db.query("update public.admin_profiles set avatar_path='' returning user_id")).rows.length,0);
 });

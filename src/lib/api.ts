@@ -15,6 +15,7 @@ export function resetDemo() {
   localStorage.removeItem(STORAGE);
   localStorage.removeItem('rifaclub-receipts');
   localStorage.removeItem('jeiel-demo-admin-access-v1');
+  localStorage.removeItem('jeiel-demo-admin-photo-v1');
 }
 interface DemoData { campaigns: Campaign[]; settings: Settings; orders: Order[]; profiles?: CustomerProfile[]; draws?: DrawResult[]; order_events?: OrderEvent[] }
 export const DEMO_CUSTOMER_SESSION = 'jeiel-demo-customer';

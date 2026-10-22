@@ -8,5 +8,6 @@ import './editor.css';
 import './accounts.css';
 import './payments.css';
 import './admin-users.css';
+import './admin-profile.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><AuthProvider><App /></AuthProvider></React.StrictMode>);
