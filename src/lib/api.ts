@@ -64,16 +64,16 @@ export async function adminOrders(): Promise<Order[]> {
   const { data, error } = await supabase.from('orders').select('*').order('created_at', { ascending: false }); check(error);
   return (data as Order[]).map(o => ({ ...o, status: o.status === 'pending' && Date.parse(o.expires_at) <= Date.now() ? 'expired' : o.status }));
 }
-export async function getOwnOrder(id:string):Promise<Order> {
+export async function getOwnOrder(id:string):Promise<Order|null> {
   const customer=await requireCustomer();
   if (!supabase) {
     const order=read().orders.find(item=>item.id===id && item.customer_id===customer.id);
-    if (!order) throw new Error('Reserva indisponível. Entre na conta que fez a reserva.');
+    if (!order) return null;
     return expireOrder(order);
   }
   const {data,error}=await supabase.from('orders').select('*').eq('id',id).eq('customer_id',customer.id).maybeSingle();
   check(error);
-  if (!data) throw new Error('Reserva indisponível. Entre na conta que fez a reserva.');
+  if (!data) return null;
   return expireOrder(data as Order);
 }
 export async function getOrderEvents(id:string):Promise<OrderEvent[]> {
@@ -92,6 +92,19 @@ export async function setOrderStatus(id: string, status: 'paid' | 'cancelled') {
     if (status==='paid') order.paid_at=timestamp; else order.cancelled_at=timestamp;
     data.order_events=[...(data.order_events||[]),{id:crypto.randomUUID(),order_id:order.id,event_type:status,source:'manual',occurred_at:timestamp,actor_id:null}];
     write(data);
+  });
+}
+export async function deleteOrder(id:string,confirmation:string){
+  if(supabase){
+    const {error}=await supabase.rpc('admin_delete_order',{p_order_id:id,p_confirmation:confirmation});check(error);return;
+  }
+  await navigator.locks.request('rifaclub-reserve',async()=>{
+    const data=read();const order=data.orders.find(item=>item.id===id);
+    if(!order)throw new Error('Reserva não encontrada ou já excluída.');
+    if(data.draws?.some(draw=>draw.campaign_id===order.campaign_id))throw new Error('Reservas de uma campanha já sorteada não podem ser excluídas.');
+    if(confirmation.trim().toUpperCase()!==id.slice(0,8).toUpperCase())throw new Error('Digite o código da reserva para confirmar a exclusão.');
+    data.orders=data.orders.filter(item=>item.id!==id);
+    data.order_events=(data.order_events||[]).filter(event=>event.order_id!==id);write(data);
   });
 }
 export async function saveSettings(settings: Settings) {

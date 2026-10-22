@@ -87,6 +87,12 @@ Um administrador existente abre **Administradores**, informa o e-mail e confirma
 
 **Remover acesso** revoga a permissão sem excluir a conta ou suas participações. O organizador não pode remover o próprio acesso. Uma autorização cancelada ou expirada não pode ser utilizada. A migração `202610220007_admin_access.sql` habilita essa gestão sem expor chaves secretas no navegador.
 
+### Excluir reservas do histórico
+
+Em **Reservas** ou **Pagamentos**, use o botão de lixeira da reserva. A confirmação mostra participante, números e valor e exige digitar os oito caracteres do código da reserva. A exclusão é permanente: remove a reserva, seus eventos de pagamento e os números ocupados, atualiza os totais e retira a participação da conta do cliente. O login, o perfil e as outras reservas do participante são preservados.
+
+Reservas confirmadas também podem ser excluídas; essa ação não devolve o Pix recebido. Se a campanha já tiver um sorteio registrado, o banco bloqueia a exclusão de qualquer reserva para preservar o resultado. Somente administradores podem executar a operação, habilitada por `202610220008_delete_orders.sql`. O contexto interno usado na remoção dos eventos é privado e dura apenas a transação; o histórico continua protegido contra alterações e exclusões diretas.
+
 ### Preparar o banco usando `postgres`
 
 Alternativamente ao SQL Editor, defina `DATABASE_URL` no `.env` ou no `.env.local` e rode:

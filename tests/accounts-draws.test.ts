@@ -119,3 +119,72 @@ test('reaplicar atualização preserva pagamentos, snapshots e eventos existente
   assert.deepEqual((await db.query(`select payment_snapshot,paid_at,status from public.orders where id=$1`,[order.id])).rows,before.rows);
   assert.deepEqual((await db.query(`select * from public.order_events where order_id=$1 order by occurred_at`,[order.id])).rows,eventsBefore.rows);
 });
+
+test('exclusão confirmada libera números, remove histórico e preserva conta, perfil e outras reservas',async()=>{
+  const order=await reserve(a,[10,11]);await pay(order.id);const other=await reserve(a,[12]);
+  await db.exec('reset role');await db.query(`insert into public.customer_profiles(user_id,full_name,phone) values($1,'Cliente Teste','5584999991234')`,[a]);
+  await asUser(admin);await db.query('select public.admin_delete_order($1,$2)',[order.id,order.id.slice(0,8)]);
+  await db.exec('reset role');
+  for(const table of ['orders','tickets','order_events']){
+    const key=table==='orders'?'id':'order_id';assert.equal((await db.query(`select * from public.${table} where ${key}=$1`,[order.id])).rows.length,0);
+  }
+  assert.equal((await db.query('select * from public.order_deletion_context')).rows.length,0);
+  assert.equal((await db.query('select * from auth.users where id=$1',[a])).rows.length,1);
+  assert.equal((await db.query('select * from public.customer_profiles where user_id=$1',[a])).rows.length,1);
+  await asUser(a);const account=await db.query<{items:Array<{id:string}>}>('select public.get_account_orders() as items');assert.deepEqual(account.rows[0].items.map(x=>x.id),[other.id]);
+  await reserve(b,[10,11]);
+});
+
+test('clientes e visitantes não excluem reservas nem forjam o contexto privado de exclusão',async()=>{
+  const order=await reserve(a,[21]);await pay(order.id);
+  for(const [user,role] of [[a,'authenticated'],[b,'authenticated'],[null,'anon']] as const){
+    await asUser(user,role);await assert.rejects(db.query('select public.admin_delete_order($1,$2)',[order.id,order.id.slice(0,8)]),/permission denied|administrativo/);
+    await assert.rejects(db.query('delete from public.orders where id=$1',[order.id]),/permission denied/);
+    await assert.rejects(db.query('insert into public.order_deletion_context values($1,$2)',[order.id,admin]),/permission denied/);
+  }
+  await asUser(admin);await db.query(`select set_config('app.delete_order',$1,false)`,[order.id]);
+  await assert.rejects(db.query('delete from public.order_events where order_id=$1',[order.id]),/permission denied/);
+  await db.exec('reset role');await assert.rejects(db.query('delete from public.order_events where order_id=$1',[order.id]),/não pode/);
+  assert.equal((await db.query('select * from public.orders where id=$1',[order.id])).rows.length,1);
+});
+
+test('código incorreto ou ausente não altera pagamento, números ou histórico',async()=>{
+  const order=await reserve(a,[22]);await pay(order.id);await asUser(admin);
+  for(const code of ['',null,'ERRADO'])await assert.rejects(db.query('select public.admin_delete_order($1,$2)',[order.id,code]),/código da reserva/);
+  await db.exec('reset role');assert.equal((await db.query('select * from public.tickets where order_id=$1',[order.id])).rows.length,1);
+  assert.equal((await db.query('select * from public.order_events where order_id=$1',[order.id])).rows.length,2);
+  assert.equal((await db.query('select * from public.order_deletion_context')).rows.length,0);
+});
+
+test('após um sorteio nenhuma reserva da campanha pode ser excluída',async()=>{
+  const first=await reserve(a,[23]);await pay(first.id);const second=await reserve(b,[24]);await pay(second.id);
+  await asUser(admin);await db.query('select public.admin_draw_campaign($1)',[campaign]);
+  for(const order of [first,second])await assert.rejects(db.query('select public.admin_delete_order($1,$2)',[order.id,order.id.slice(0,8)]),/já sorteada/);
+  await db.exec('reset role');assert.equal((await db.query('select * from public.orders')).rows.length,2);
+  assert.equal((await db.query('select * from public.order_deletion_context')).rows.length,0);
+});
+
+test('excluir reservas antigas não remove números já reservados por outra pessoa',async()=>{
+  const expired=await reserve(a,[25]);await db.exec('reset role');await db.query(`update public.orders set expires_at=now()-interval '1 minute' where id=$1`,[expired.id]);
+  const replacement=await reserve(b,[25]);await asUser(admin);await db.query('select public.admin_delete_order($1,$2)',[expired.id,expired.id.slice(0,8)]);
+  assert.equal((await db.query('select * from public.orders where id=$1',[replacement.id])).rows.length,1);
+  await db.exec('reset role');assert.equal((await db.query('select * from public.tickets where order_id=$1',[replacement.id])).rows.length,1);
+});
+
+test('exclusão funciona em cancelados e pendentes e recusa repetir a operação',async()=>{
+  const cancelled=await reserve(a,[26]);await asUser(admin);await db.query(`select public.admin_order_status($1,'cancelled')`,[cancelled.id]);
+  const pending=await reserve(b,[27]);await asUser(admin);
+  for(const order of [cancelled,pending]){
+    await db.query('select public.admin_delete_order($1,$2)',[order.id,order.id.slice(0,8)]);
+    await assert.rejects(db.query('select public.admin_delete_order($1,$2)',[order.id,order.id.slice(0,8)]),/já excluída/);
+  }
+  await db.exec('reset role');assert.equal((await db.query('select * from public.orders')).rows.length,0);
+  assert.equal((await db.query('select * from public.order_events')).rows.length,0);
+});
+
+test('números pagos excluídos deixam de participar do sorteio',async()=>{
+  const deleted=await reserve(a,[28]);await pay(deleted.id);const remaining=await reserve(b,[29]);await pay(remaining.id);
+  await asUser(admin);await db.query('select public.admin_delete_order($1,$2)',[deleted.id,deleted.id.slice(0,8)]);
+  const draw=await db.query<{result:{eligible_numbers:number[];winning_number:number}}>('select public.admin_draw_campaign($1) as result',[campaign]);
+  assert.deepEqual(draw.rows[0].result.eligible_numbers,[29]);assert.equal(draw.rows[0].result.winning_number,29);
+});
